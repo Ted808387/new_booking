@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>即時預約系統 (Firebase 版本)</title>
+    <title>簡易預約系統 (Vue.js 版本)</title>
 
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f6; }
@@ -48,7 +48,7 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            min-height: 400px;
+            min-height: 50vh;
             color: #6c757d;
         }
         .loader {
@@ -64,10 +64,19 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+        .fc-timeGridWeek-view .fc-day-today {
+            background-color: transparent !important;
+        }
+        .fc-timeGridWeek-view .fc-day-today .fc-col-header-cell-cushion {
+            background-color: #fcf8e3;
+            border-radius: 4px;
+            padding: 4px;
+        }
         @media (max-width: 600px) {
             #app { padding: 10px; }
-            .fc-header-toolbar .fc-toolbar-title { font-size: 1.25em; }
-            .fc-header-toolbar .fc-button { padding: 0.3em 0.5em; margin: 0 2px; font-size: 0.9em; }
+            .booking-title { font-size: 1.2rem; }
+            .fc-header-toolbar .fc-toolbar-title { font-size: 1.1em; }
+            .fc-header-toolbar .fc-button { padding: 0.2em 0.4em; margin: 0 2px; font-size: 0.8em; }
             .booking-form { margin: 10px auto; padding: 15px; }
             .calendar-legend { flex-direction: column; gap: 10px; align-items: flex-start; }
         }
@@ -76,13 +85,13 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src='https://unpkg.com/fullcalendar@6.1.11/index.global.min.js'></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
     <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore-compat.js"></script>
 </head>
 <body>
+
     <div id="app">
-        <h2 style="text-align: center;">預約日曆</h2>
+        <h2 class="booking-title" style="text-align: center;">預約日曆</h2>
         
         <div v-if="isLoading" class="loading-container">
             <div class="loader"></div>
@@ -104,12 +113,15 @@
                     <div class="legend-color-box" style="background-color: #f4f4f5;"></div>
                     <span>非服務時段</span>
                 </div>
+                <div class="legend-item">
+                    <div class="legend-color-box" style="background-color: #fcf8e3;"></div>
+                    <span>當日</span>
+                </div>
             </div>
         </div>
 
         <div v-if="selectedDate" class="booking-form">
             <h3>預約 {{ selectedDate }}</h3>
-            
             <div class="time-slots" v-if="!booking.time">
                 <h4>選擇時段</h4>
                 <template v-if="availableTimeSlots.length > 0">
@@ -124,14 +136,11 @@
                 </template>
                 <p v-else>{{ timeSlotMessage }}</p>
             </div>
-            
             <div class="form-group" v-if="booking.time">
                 <label>已選時段</label>
                 <input type="text" :value="booking.time" readonly disabled style="background-color: #e9ecef; text-align: center;">
             </div>
-
             <hr v-if="booking.time"/>
-
             <form @submit.prevent="submitBooking">
                 <div class="form-group">
                     <label for="service">選擇服務項目</label>
@@ -162,295 +171,330 @@
         </div>
     </div>
 
-<script>
-    // ❗️❗️ 步驟 5.3: 在這裡貼上您自己的 Firebase 設定物件
-		const firebaseConfig = {
-			apiKey: "AIzaSyAWhUsaiWWxa36Kt57JraqbL4Lq6xnrClQ",
-			authDomain: "pro-booking-system-f6d77.firebaseapp.com",
-			projectId: "pro-booking-system-f6d77",
-			storageBucket: "pro-booking-system-f6d77.firebasestorage.app",
-			messagingSenderId: "468374614320",
-			appId: "1:468374614320:web:45134e99e5a3f08fe498f5"
-		};
+    <script>
+        const firebaseConfig = {
+          apiKey: "AIzaSyAWhUsaiWWxa36Kt57JraqbL4Lq6xnrClQ",
+          authDomain: "pro-booking-system-f6d77.firebaseapp.com",
+          projectId: "pro-booking-system-f6d77",
+          storageBucket: "pro-booking-system-f6d77.appspot.com",
+          messagingSenderId: "468374614320",
+          appId: "1:468374614320:web:45134e99e5a3f08fe498f5"
+        };
 
-    // 初始化 Firebase
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
 
-    const { createApp } = Vue;
+        const { createApp } = Vue;
 
-    createApp({
-        data() {
-            return {
-                isLoading: true,
-                services: [],
-                bookedTimes: [],
-                availableSlotsConfig: [],
-                calendar: null,
-                selectedDate: null,
-                booking: { 
-                    date: '', time: '', service: '',
-                    name: '', email: '', phone: '',
-                    remarks: ''
+        createApp({
+            data() {
+                return {
+                    isLoading: true,
+                    services: [],
+                    bookedTimes: [],
+                    availableSlotsConfig: [],
+                    calendar: null,
+                    selectedDate: null,
+                    booking: {
+                        date: '',
+                        time: '',
+                        service: '',
+                        name: '',
+                        email: '',
+                        phone: '',
+                        remarks: ''
+                    },
+                    isMobileView: false,
+                    currentView: 'dayGridMonth',
+                }
+            },
+            computed: {
+                bookedEvents() {
+                    return this.bookedTimes.map(startTimeStr => {
+                        const startTime = new Date(startTimeStr);
+                        const endTime = new Date(startTime.getTime() + 30 * 60000);
+                        return {
+                            start: startTime,
+                            end: endTime,
+                            display: 'background',
+                            color: '#ff9f89'
+                        };
+                    });
                 },
-                isMobileView: false,
-                currentView: 'dayGridMonth',
-            }
-        },
-        computed: {
-            bookedEvents() {
-                return this.bookedTimes.map(startTimeStr => {
-                    const startTime = new Date(startTimeStr);
-                    const endTime = new Date(startTime.getTime() + 30 * 60000); 
-                    return {
-                        title: '已被預約',
-                        start: startTime,
-                        end: endTime,
-                        display: 'background',
-                        color: '#ff9f89'
-                    };
-                });
-            },
-            availableSlotsEvents() {
-                return this.availableSlotsConfig.map(slot => {
-                    return {
-                        groupId: 'availableSlots',
-                        startTime: slot.start,
-                        endTime: slot.end,
-                        daysOfWeek: [ slot.day - 1 ],
-                        display: 'background',
-                        color: '#dcfce7',
-                        classNames: ['available-slot']
-                    };
-                });
-            },
-            allCalendarEvents() {
-                return [ ...this.bookedEvents, ...this.availableSlotsEvents ];
-            },
-            availableTimeSlots() {
-                if (!this.selectedDate) return [];
-                const dayOfWeekForSheet = new Date(this.selectedDate).getDay() + 1;
-                const daySlotsConfig = this.availableSlotsConfig.filter(
-                    s => parseInt(s.day) === dayOfWeekForSheet
-                );
-                if (daySlotsConfig.length === 0) return [];
+                availableSlotsEvents() {
+                    return this.availableSlotsConfig.map(slot => {
+                        return {
+                            groupId: 'availableSlots',
+                            startTime: slot.start,
+                            endTime: slot.end,
+                            daysOfWeek: [ slot.day - 1 ],
+                            display: 'background',
+                            color: '#dcfce7',
+                            classNames: ['available-slot']
+                        };
+                    });
+                },
+                allCalendarEvents() {
+                    return [ ...this.bookedEvents, ...this.availableSlotsEvents ];
+                },
+                availableTimeSlots() {
+                    if (!this.selectedDate) return [];
+                    const dayOfWeekForSheet = new Date(this.selectedDate).getDay() + 1;
+                    const daySlotsConfig = this.availableSlotsConfig.filter(
+                        s => s.day == dayOfWeekForSheet
+                    );
+                    if (daySlotsConfig.length === 0) return [];
 
-                const allSlots = [];
-                daySlotsConfig.forEach(slot => {
-                    let currentTime = new Date(`${this.selectedDate}T${slot.start}`);
-                    const endTime = new Date(`${this.selectedDate}T${slot.end}`);
-                    while (currentTime < endTime) {
-                        const timeStr = currentTime.toTimeString().substring(0, 5);
-                        const fullDateTimeStr = `${this.selectedDate}T${timeStr}`;
-                        allSlots.push({
-                            time: timeStr,
-                            isBooked: this.bookedTimes.includes(fullDateTimeStr)
-                        });
-                        currentTime.setMinutes(currentTime.getMinutes() + 30);
+                    const allSlots = [];
+                    daySlotsConfig.forEach(slot => {
+                        let currentTime = new Date(`${this.selectedDate}T${slot.start}`);
+                        const endTime = new Date(`${this.selectedDate}T${slot.end}`);
+                        while (currentTime < endTime) {
+                            const timeStr = currentTime.toTimeString().substring(0, 5);
+                            const fullDateTimeStr = `${this.selectedDate}T${timeStr}`;
+                            allSlots.push({
+                                time: timeStr,
+                                isBooked: this.bookedTimes.includes(fullDateTimeStr)
+                            });
+                            currentTime.setMinutes(currentTime.getMinutes() + 30);
+                        }
+                    });
+                    return allSlots.sort((a, b) => a.time.localeCompare(b.time));
+                },
+                timeSlotMessage() {
+                    if (!this.selectedDate) return '';
+                    const available = this.availableTimeSlots.some(slot => !slot.isBooked);
+                    if (this.availableTimeSlots.length === 0) {
+                        return '本日無開放預約。';
+                    } else if (!available) {
+                        return '本日時段皆已約滿。';
                     }
-                });
-                return allSlots;
-            },
-            timeSlotMessage() {
-                if (!this.selectedDate) return '';
-                if (this.availableTimeSlots.length === 0) {
-                    return '本日無開放預約。';
+                    return '';
                 }
-                const isAllBooked = this.availableTimeSlots.every(slot => slot.isBooked);
-                if (isAllBooked) {
-                    return '本日時段皆已約滿。';
-                }
-                return '';
-            }
-        },
-        methods: {
-            showNotification(icon, title, text) {
-                Swal.fire({
-                    icon: icon, title: title, text: text,
-                    timer: 2500, timerProgressBar: true, showConfirmButton: false,
-                });
             },
-            setupFirestoreListeners() {
-                this.isLoading = true;
-                
-                db.collection("services").onSnapshot(snapshot => {
-                    this.services = snapshot.docs.map(doc => doc.data());
-                    if (this.services.length > 0 && !this.booking.service) {
-                        this.booking.service = this.services[0].name;
-                    }
-                }, err => console.error("讀取 services 失敗:", err));
+            methods: {
+                showNotification(icon, title, text) {
+                    Swal.fire({
+                        icon: icon,
+                        title: title,
+                        text: text,
+                        timer: 2500,
+                        timerProgressBar: true,
+                        showConfirmButton: false,
+                    });
+                },
+                setupFirestoreListeners() {
+                    // 這個函式現在回傳一個 Promise，它會在第一次資料載入完成時 resolve
+                    return new Promise((resolve) => {
+                        let loaded = { services: false, slots: false, bookings: false };
+                        const checkAllLoaded = () => {
+                            if (loaded.services && loaded.slots && loaded.bookings) {
+                                this.isLoading = false;
+                                resolve(); // 通知 Promise 已完成
+                            }
+                        };
 
-                db.collection("availableSlots").onSnapshot(snapshot => {
-                    this.availableSlotsConfig = snapshot.docs.map(doc => doc.data());
-                }, err => console.error("讀取 availableSlots 失敗:", err));
+                        db.collection("services").onSnapshot(snapshot => {
+                            this.services = snapshot.docs.map(doc => doc.data());
+                            if (this.services.length > 0 && !this.booking.service) {
+                                this.booking.service = this.services[0].name;
+                            }
+                            loaded.services = true;
+                            checkAllLoaded();
+                        }, err => console.error("讀取 services 失敗:", err));
 
-                db.collection("bookings").onSnapshot(snapshot => {
-                    this.bookedTimes = snapshot.docs
-                        .map(doc => doc.data())
-                        .filter(booking => booking.status === '已確認' || booking.status === '待確認')
-                        .map(booking => {
-                            const date = booking.bookingDate.toDate();
-                            const timeStr = booking.bookingTime;
-                            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${timeStr}`;
+                        db.collection("availableSlots").onSnapshot(snapshot => {
+                            this.availableSlotsConfig = snapshot.docs.map(doc => doc.data());
+                            loaded.slots = true;
+                            checkAllLoaded();
+                        }, err => console.error("讀取 availableSlots 失敗:", err));
+
+                        db.collection("bookings").onSnapshot(snapshot => {
+                            this.bookedTimes = snapshot.docs
+                                .map(doc => doc.data())
+                                .filter(booking => booking.status === '已確認' || booking.status === '待確認')
+                                .map(booking => {
+                                    const date = booking.bookingDate.toDate();
+                                    const timeStr = booking.bookingTime;
+                                    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${timeStr}`;
+                                });
+                            loaded.bookings = true;
+                            checkAllLoaded();
+                        }, err => {
+                            console.error("讀取 bookings 失敗:", err);
+                            this.showNotification('error', '載入失敗', '無法獲取預約資料。');
+                            this.isLoading = false; // 即使失敗也要結束 loading
+                            resolve(); // 即使失敗也要 resolve
                         });
-                    this.isLoading = false;
-                }, err => {
-                    console.error("讀取 bookings 失敗:", err);
-                    this.showNotification('error', '載入失敗', '無法獲取預約資料。');
-                    this.isLoading = false;
-                });
-            },
-            initializeCalendar() {
-                const calendarEl = document.getElementById('calendar');
-                this.calendar = new FullCalendar.Calendar(calendarEl, {
-                    initialView: 'dayGridMonth',
-                    locale: 'zh-tw',
-                    headerToolbar: false,
-                    events: this.allCalendarEvents,
-                    dateClick: this.handleDateClick,
-                    allDaySlot: false,
-                    slotMinTime: "08:00:00",
-                    slotMaxTime: "22:00:00",
-                    viewDidMount: (info) => {
-                        this.currentView = info.view.type;
-                        this.updateViewFormats();
-                        this.updateTitleBasedOnRange();
-                    },
-                    datesDidUpdate: () => {
-                        this.updateTitleBasedOnRange();
-                    },
-                    slotLabelFormat: {
-                        hour: '2-digit', minute: '2-digit',
-                        hour12: false, omitZeroMinute: false, locale: 'en'
-                    },
-                });
-                this.calendar.render();
-            },
-            updateViewFormats() {
-                if (this.currentView === 'timeGridWeek') {
-                    this.calendar.setOption('dayHeaderFormat', {
-                        month: 'numeric', day: 'numeric', omitCommas: true
                     });
-                } else {
-                    this.calendar.setOption('dayHeaderFormat', {
-                        weekday: 'short'
+                },
+                initializeCalendar() {
+                    const calendarEl = document.getElementById('calendar');
+                    if (this.calendar) { this.calendar.destroy(); }
+                    this.calendar = new FullCalendar.Calendar(calendarEl, {
+                        initialView: 'dayGridMonth',
+                        locale: 'zh-tw',
+                        headerToolbar: false,
+                        events: this.allCalendarEvents,
+                        dateClick: this.handleDateClick,
+                        allDaySlot: false,
+                        slotMinTime: "08:00:00",
+                        slotMaxTime: "22:00:00",
+                        viewDidMount: (info) => {
+                            this.currentView = info.view.type;
+                            this.updateViewFormats();
+                            this.updateTitleBasedOnRange();
+                        },
+                        datesSet: () => {
+                            this.updateTitleBasedOnRange();
+                        },
+                        titleFormat: {
+                            year: 'numeric',
+                            month: '2-digit'
+                        },
+                        slotLabelFormat: {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false,
+                            omitZeroMinute: false,
+                            locale: 'en'
+                        }
                     });
-                }
-            },
-            updateTitleBasedOnRange() {
-                if (!this.calendar) return;
-                const view = this.calendar.view;
-                const startDate = view.currentStart;
-                const endDate = new Date(view.currentEnd.getTime() - (24*60*60*1000));
-                const defaultFormat = { year: 'numeric', month: '2-digit' };
-                const shortRangeFormat = { month: 'short', day: 'numeric' };
+                    this.calendar.render();
+                },
+                updateViewFormats() {
+                    if (!this.calendar) return;
+                    if (this.currentView === 'timeGridWeek') {
+                        this.calendar.setOption('dayHeaderFormat', {
+                            month: 'numeric',
+                            day: 'numeric',
+                            omitCommas: true
+                        });
+                    } else {
+                        this.calendar.setOption('dayHeaderFormat', {
+                            weekday: 'short'
+                        });
+                    }
+                },
+                updateTitleBasedOnRange() {
+                    if (!this.calendar) return;
+                    const view = this.calendar.view;
+                    const startDate = view.currentStart;
+                    const endDate = new Date(view.currentEnd.getTime() - (24*60*60*1000));
+                    const defaultFormat = { year: 'numeric', month: '2-digit' };
+                    const shortRangeFormat = { month: 'short', day: 'numeric' };
 
-                if (this.isMobileView && startDate.getMonth() !== endDate.getMonth()) {
-                    this.calendar.setOption('titleFormat', shortRangeFormat);
-                } else {
-                    this.calendar.setOption('titleFormat', defaultFormat);
-                }
-            },
-            updateCalendarLayout() {
-                this.isMobileView = window.innerWidth <= 600;
-                let newToolbarOptions;
-                if (this.isMobileView) {
-                    newToolbarOptions = { left: 'prev,next', center: 'title', right: 'today' };
-                } else {
-                    newToolbarOptions = { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek' };
-                }
-                this.calendar.setOption('headerToolbar', newToolbarOptions);
-                this.updateTitleBasedOnRange();
-            },
-            handleDateClick(info) {
-                const clickedDateTime = info.date;
-                const dayOfWeek = clickedDateTime.getDay() + 1;
-                const clickedMinutes = clickedDateTime.getHours() * 60 + clickedDateTime.getMinutes();
+                    if (this.isMobileView && startDate.getMonth() !== endDate.getMonth()) {
+                        this.calendar.setOption('titleFormat', shortRangeFormat);
+                    } else {
+                        this.calendar.setOption('titleFormat', defaultFormat);
+                    }
+                },
+                updateCalendarLayout() {
+                    this.isMobileView = window.innerWidth <= 600;
+                    let newToolbarOptions;
+                    if (this.isMobileView) {
+                        newToolbarOptions = { left: 'prev,next', center: 'title', right: 'today' };
+                    } else {
+                        newToolbarOptions = { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek' };
+                    }
+                    if(this.calendar) {
+                       this.calendar.setOption('headerToolbar', newToolbarOptions);
+                    }
+                    this.updateTitleBasedOnRange();
+                },
+                handleDateClick(info) {
+                    const clickedDateTime = info.date;
+                    const dayOfWeek = clickedDateTime.getDay() + 1;
+                    const clickedMinutes = clickedDateTime.getHours() * 60 + clickedDateTime.getMinutes();
 
-                const isClickable = this.availableSlotsConfig.some(slot => {
-                    if (parseInt(slot.day) !== dayOfWeek) return false;
-                    const startMinutes = parseInt(slot.start.split(':')[0]) * 60 + parseInt(slot.start.split(':')[1]);
-                    const endMinutes = parseInt(slot.end.split(':')[0]) * 60 + parseInt(slot.end.split(':')[1]);
-                    return clickedMinutes >= startMinutes && clickedMinutes < endMinutes;
-                });
-
-                if (this.currentView === 'timeGridWeek' && !isClickable) {
-                    this.showNotification('info', '非服務時段', '請在亮綠色的可預約時段內點擊喔！');
-                    return;
-                }
-                
-                const dateStr = `${clickedDateTime.getFullYear()}-${String(clickedDateTime.getMonth() + 1).padStart(2, '0')}-${String(clickedDateTime.getDate()).padStart(2, '0')}`;
-                const timeStr = clickedDateTime.toTimeString().substring(0, 5);
-                const fullDateTimeStr = `${dateStr}T${timeStr}`;
-
-                if (this.bookedTimes.includes(fullDateTimeStr)) {
-                    this.showNotification('info', '此時段已被預約', '請選擇其他可用的時段。');
-                    return;
-                }
-
-                if (info.allDay) {
-                    this.selectedDate = dateStr;
-                    this.booking.date = dateStr;
-                    this.booking.time = '';
-                } else {
-                    this.selectedDate = dateStr;
-                    this.booking.date = dateStr;
-                    this.booking.time = timeStr;
-                    this.$nextTick(() => {
-                        document.querySelector('.booking-form')?.scrollIntoView({ behavior: 'smooth' });
+                    const isClickable = this.availableSlotsConfig.some(slot => {
+                        if (parseInt(slot.day) !== dayOfWeek) return false;
+                        const startMinutes = parseInt(slot.start.split(':')[0]) * 60 + parseInt(slot.start.split(':')[1]);
+                        const endMinutes = parseInt(slot.end.split(':')[0]) * 60 + parseInt(slot.end.split(':')[1]);
+                        return clickedMinutes >= startMinutes && clickedMinutes < endMinutes;
                     });
-                }
-            },
-            selectTime(time) {
-                this.booking.time = time;
-            },
-            async submitBooking() {
-                if (!this.booking.time) {
-                    this.showNotification('warning', '提示', '請先選擇一個預約時段！');
-                    return;
-                }
-                
-                Swal.fire({
-                    title: '正在提交預約...', text: '請稍候',
-                    allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }
-                });
 
-                try {
-                    const bookingData = {
-                        name: this.booking.name,
-                        email: this.booking.email,
-                        phone: this.booking.phone,
-                        service: this.booking.service,
-                        bookingDate: new Date(this.booking.date),
-                        bookingTime: this.booking.time,
-                        status: '待確認',
-                        timestamp: new Date(),
-                        remarks: this.booking.remarks || ""
-                    };
-                    await db.collection("bookings").add(bookingData);
-                    Swal.close();
-                    this.showNotification('success', '預約成功！', '我們將盡快與您確認，謝謝。');
+                    if (this.currentView === 'timeGridWeek' && !isClickable) {
+                        this.showNotification('info', '非服務時段', '請在亮綠色的可預約時段內點擊喔！');
+                        return;
+                    }
                     
-                    this.booking.name = ''; this.booking.email = ''; this.booking.phone = ''; this.booking.remarks = '';
-                    this.selectedDate = null;
+                    const dateStr = `${clickedDateTime.getFullYear()}-${String(clickedDateTime.getMonth() + 1).padStart(2, '0')}-${String(clickedDateTime.getDate()).padStart(2, '0')}`;
+                    const timeStr = clickedDateTime.toTimeString().substring(0, 5);
+                    const fullDateTimeStr = `${dateStr}T${timeStr}`;
 
-                } catch (error) {
-                    Swal.close();
-                    this.showNotification('error', '預約失敗', error.message);
+                    if (this.bookedTimes.includes(fullDateTimeStr)) {
+                        this.showNotification('info', '此時段已被預約', '請選擇其他可用的時段。');
+                        return;
+                    }
+
+                    if (info.allDay) {
+                        this.selectedDate = dateStr;
+                        this.booking.date = dateStr;
+                        this.booking.time = '';
+                    } else {
+                        this.selectedDate = dateStr;
+                        this.booking.date = dateStr;
+                        this.booking.time = timeStr;
+                        this.$nextTick(() => {
+                            document.querySelector('.booking-form')?.scrollIntoView({ behavior: 'smooth' });
+                        });
+                    }
+                },
+                selectTime(time) {
+                    this.booking.time = time;
+                },
+                async submitBooking() {
+                    if (!this.booking.time) {
+                        this.showNotification('warning', '提示', '請先選擇一個預約時段！');
+                        return;
+                    }
+                    
+                    Swal.fire({
+                        title: '正在提交預約...', text: '請稍候',
+                        allowOutsideClick: false, didOpen: () => { Swal.showLoading(); }
+                    });
+
+                    try {
+                        const bookingData = {
+                            name: this.booking.name,
+                            email: this.booking.email,
+                            phone: this.booking.phone,
+                            service: this.booking.service,
+                            bookingDate: new Date(this.booking.date),
+                            bookingTime: this.booking.time,
+                            status: '待確認',
+                            timestamp: new Date(),
+                            remarks: this.booking.remarks || ""
+                        };
+                        await db.collection("bookings").add(bookingData);
+                        Swal.close();
+                        this.showNotification('success', '預約成功！', '我們將盡快與您確認，謝謝。');
+                        
+                        this.booking.name = ''; this.booking.email = ''; this.booking.phone = ''; this.booking.remarks = '';
+                        this.selectedDate = null;
+
+                    } catch (error) {
+                        Swal.close();
+                        this.showNotification('error', '預約失敗', error.message);
+                    }
                 }
+            },
+            mounted() {
+                this.setupFirestoreListeners().then(() => {
+                    this.$nextTick(() => {
+                        this.initializeCalendar();
+                        this.updateCalendarLayout();
+                        window.addEventListener('resize', this.updateCalendarLayout);
+                    });
+                });
+            },
+            beforeUnmount() {
+                window.removeEventListener('resize', this.updateCalendarLayout);
             }
-        },
-        mounted() {
-            this.initializeCalendar();
-            this.updateCalendarLayout();
-            window.addEventListener('resize', this.updateCalendarLayout);
-            this.setupFirestoreListeners();
-        },
-        beforeUnmount() {
-            window.removeEventListener('resize', this.updateCalendarLayout);
-        }
-    }).mount('#app');
-</script>
+        }).mount('#app');
+    </script>
 
 </body>
 </html>
