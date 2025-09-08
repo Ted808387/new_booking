@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>簡易預約系統 (Vue.js 版本)</title>
+    <title>簡易預約系統</title>
 
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: #f4f7f6; }
@@ -43,6 +43,17 @@
             border-radius: 4px;
             border: 1px solid rgba(0,0,0,0.1);
         }
+
+        .fc-timeGridWeek-view .fc-day-today {
+            background-color: transparent !important;
+        }
+
+        .fc-timeGridWeek-view .fc-day-today .fc-col-header-cell-cushion {
+            background-color: #fcf8e3;
+            border-radius: 4px;
+            padding: 4px;
+        }
+        
         .loading-container {
             display: flex;
             flex-direction: column;
@@ -64,17 +75,12 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .fc-timeGridWeek-view .fc-day-today {
-            background-color: transparent !important;
-        }
-        .fc-timeGridWeek-view .fc-day-today .fc-col-header-cell-cushion {
-            background-color: #fcf8e3;
-            border-radius: 4px;
-            padding: 4px;
-        }
+
         @media (max-width: 600px) {
             #app { padding: 10px; }
-            .booking-title { font-size: 1.2rem; }
+            .booking-title {
+              font-size: 1.2rem;
+            }
             .fc-header-toolbar .fc-toolbar-title { font-size: 1.1em; }
             .fc-header-toolbar .fc-button { padding: 0.2em 0.4em; margin: 0 2px; font-size: 0.8em; }
             .booking-form { margin: 10px auto; padding: 15px; }
@@ -122,6 +128,7 @@
 
         <div v-if="selectedDate" class="booking-form">
             <h3>預約 {{ selectedDate }}</h3>
+            
             <div class="time-slots" v-if="!booking.time">
                 <h4>選擇時段</h4>
                 <template v-if="availableTimeSlots.length > 0">
@@ -132,15 +139,20 @@
                         :class="{ 'selected': booking.time === slot.time }"
                         :disabled="slot.isBooked"
                         type="button"
-                    >{{ slot.time }}</button>
+                    >
+                        {{ slot.time }}
+                    </button>
                 </template>
                 <p v-else>{{ timeSlotMessage }}</p>
             </div>
+            
             <div class="form-group" v-if="booking.time">
                 <label>已選時段</label>
                 <input type="text" :value="booking.time" readonly disabled style="background-color: #e9ecef; text-align: center;">
             </div>
+
             <hr v-if="booking.time"/>
+
             <form @submit.prevent="submitBooking">
                 <div class="form-group">
                     <label for="service">選擇服務項目</label>
@@ -193,6 +205,7 @@
                     services: [],
                     bookedTimes: [],
                     availableSlotsConfig: [],
+                    specialDatesConfig: [],
                     calendar: null,
                     selectedDate: null,
                     booking: {
@@ -222,27 +235,63 @@
                     });
                 },
                 availableSlotsEvents() {
-                    return this.availableSlotsConfig.map(slot => {
-                        return {
-                            groupId: 'availableSlots',
-                            startTime: slot.start,
-                            endTime: slot.end,
-                            daysOfWeek: [ slot.day - 1 ],
-                            display: 'background',
-                            color: '#dcfce7',
-                            classNames: ['available-slot']
-                        };
-                    });
+                    const specialHolidayDates = new Set(this.specialDatesConfig
+                        .filter(rule => rule.type === '休假')
+                        .map(rule => this.formatDate(rule.date.toDate())));
+
+                    const regularSlots = this.availableSlotsConfig.map(slot => ({
+                        groupId: 'availableSlots',
+                        startTime: slot.start,
+                        endTime: slot.end,
+                        daysOfWeek: [ slot.day - 1 ],
+                        display: 'background',
+                        color: '#dcfce7',
+                    }));
+
+                    const specialTimeSlots = this.specialDatesConfig
+                        .filter(rule => rule.type === '特殊時段')
+                        .map(rule => {
+                            const dateStr = this.formatDate(rule.date.toDate());
+                            return {
+                                groupId: 'availableSlots',
+                                start: `${dateStr}T${rule.start}`,
+                                end: `${dateStr}T${rule.end}`,
+                                display: 'background',
+                                color: '#dcfce7',
+                            }
+                        });
+
+                    const holidayEvents = Array.from(specialHolidayDates).map(dateStr => ({
+                        start: dateStr,
+                        allDay: true,
+                        display: 'background',
+                        color: '#f4f4f5'
+                    }));
+                    
+                    return [ ...regularSlots, ...specialTimeSlots, ...holidayEvents ];
                 },
                 allCalendarEvents() {
                     return [ ...this.bookedEvents, ...this.availableSlotsEvents ];
                 },
                 availableTimeSlots() {
                     if (!this.selectedDate) return [];
-                    const dayOfWeekForSheet = new Date(this.selectedDate).getDay() + 1;
-                    const daySlotsConfig = this.availableSlotsConfig.filter(
-                        s => s.day == dayOfWeekForSheet
-                    );
+                    
+                    const specialRule = this.specialDatesConfig.find(rule => this.formatDate(rule.date.toDate()) === this.selectedDate);
+
+                    let daySlotsConfig = [];
+
+                    if (specialRule) {
+                        if (specialRule.type === '休假') return [];
+                        if (specialRule.type === '特殊時段') {
+                            daySlotsConfig.push({ start: specialRule.start, end: specialRule.end });
+                        }
+                    } else {
+                        const dayOfWeekForSheet = new Date(this.selectedDate).getDay() + 1;
+                        daySlotsConfig = this.availableSlotsConfig.filter(
+                            s => parseInt(s.day) === dayOfWeekForSheet
+                        );
+                    }
+
                     if (daySlotsConfig.length === 0) return [];
 
                     const allSlots = [];
@@ -263,42 +312,36 @@
                 },
                 timeSlotMessage() {
                     if (!this.selectedDate) return '';
-                    const available = this.availableTimeSlots.some(slot => !slot.isBooked);
-                    if (this.availableTimeSlots.length === 0) {
-                        return '本日無開放預約。';
-                    } else if (!available) {
-                        return '本日時段皆已約滿。';
+                    const specialRule = this.specialDatesConfig.find(rule => this.formatDate(rule.date.toDate()) === this.selectedDate);
+                    if (specialRule && specialRule.type === '休假') {
+                        return '本日公休。';
                     }
+                    if (this.availableTimeSlots.length === 0) return '本日無開放預約。';
+                    const isAllBooked = this.availableTimeSlots.every(slot => slot.isBooked);
+                    if (isAllBooked) return '本日時段皆已約滿。';
                     return '';
                 }
             },
             methods: {
                 showNotification(icon, title, text) {
                     Swal.fire({
-                        icon: icon,
-                        title: title,
-                        text: text,
-                        timer: 2500,
-                        timerProgressBar: true,
-                        showConfirmButton: false,
+                        icon: icon, title: title, text: text,
+                        timer: 2500, timerProgressBar: true, showConfirmButton: false,
                     });
                 },
                 setupFirestoreListeners() {
-                    // 這個函式現在回傳一個 Promise，它會在第一次資料載入完成時 resolve
                     return new Promise((resolve) => {
-                        let loaded = { services: false, slots: false, bookings: false };
+                        let loaded = { services: false, slots: false, bookings: false, special: false };
                         const checkAllLoaded = () => {
-                            if (loaded.services && loaded.slots && loaded.bookings) {
+                            if (loaded.services && loaded.slots && loaded.bookings && loaded.special) {
                                 this.isLoading = false;
-                                resolve(); // 通知 Promise 已完成
+                                resolve();
                             }
                         };
 
                         db.collection("services").onSnapshot(snapshot => {
                             this.services = snapshot.docs.map(doc => doc.data());
-                            if (this.services.length > 0 && !this.booking.service) {
-                                this.booking.service = this.services[0].name;
-                            }
+                            if (this.services.length > 0 && !this.booking.service) { this.booking.service = this.services[0].name; }
                             loaded.services = true;
                             checkAllLoaded();
                         }, err => console.error("讀取 services 失敗:", err));
@@ -309,22 +352,23 @@
                             checkAllLoaded();
                         }, err => console.error("讀取 availableSlots 失敗:", err));
 
+                        db.collection("specialDates").onSnapshot(snapshot => {
+                            this.specialDatesConfig = snapshot.docs.map(doc => doc.data());
+                            loaded.special = true;
+                            checkAllLoaded();
+                        }, err => console.error("讀取 specialDates 失敗:", err));
+
                         db.collection("bookings").onSnapshot(snapshot => {
-                            this.bookedTimes = snapshot.docs
-                                .map(doc => doc.data())
+                            this.bookedTimes = snapshot.docs.map(doc => doc.data())
                                 .filter(booking => booking.status === '已確認' || booking.status === '待確認')
-                                .map(booking => {
-                                    const date = booking.bookingDate.toDate();
-                                    const timeStr = booking.bookingTime;
-                                    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${timeStr}`;
-                                });
+                                .map(booking => this.formatBookingToString(booking));
                             loaded.bookings = true;
                             checkAllLoaded();
                         }, err => {
                             console.error("讀取 bookings 失敗:", err);
                             this.showNotification('error', '載入失敗', '無法獲取預約資料。');
-                            this.isLoading = false; // 即使失敗也要結束 loading
-                            resolve(); // 即使失敗也要 resolve
+                            this.isLoading = false;
+                            resolve();
                         });
                     });
                 },
@@ -348,39 +392,27 @@
                         datesSet: () => {
                             this.updateTitleBasedOnRange();
                         },
-                        titleFormat: {
-                            year: 'numeric',
-                            month: '2-digit'
-                        },
+                        titleFormat: { year: 'numeric', month: '2-digit' },
                         slotLabelFormat: {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            hour12: false,
-                            omitZeroMinute: false,
-                            locale: 'en'
-                        }
+                            hour: '2-digit', minute: '2-digit',
+                            hour12: false, omitZeroMinute: false, locale: 'en'
+                        },
                     });
                     this.calendar.render();
                 },
                 updateViewFormats() {
                     if (!this.calendar) return;
                     if (this.currentView === 'timeGridWeek') {
-                        this.calendar.setOption('dayHeaderFormat', {
-                            month: 'numeric',
-                            day: 'numeric',
-                            omitCommas: true
-                        });
+                        this.calendar.setOption('dayHeaderFormat', { month: 'numeric', day: 'numeric', omitCommas: true });
                     } else {
-                        this.calendar.setOption('dayHeaderFormat', {
-                            weekday: 'short'
-                        });
+                        this.calendar.setOption('dayHeaderFormat', { weekday: 'short' });
                     }
                 },
                 updateTitleBasedOnRange() {
                     if (!this.calendar) return;
                     const view = this.calendar.view;
                     const startDate = view.currentStart;
-                    const endDate = new Date(view.currentEnd.getTime() - (24*60*60*1000));
+                    const endDate = new Date(view.currentEnd.getTime() - (24 * 60 * 60 * 1000));
                     const defaultFormat = { year: 'numeric', month: '2-digit' };
                     const shortRangeFormat = { month: 'short', day: 'numeric' };
 
@@ -398,29 +430,36 @@
                     } else {
                         newToolbarOptions = { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek' };
                     }
-                    if(this.calendar) {
-                       this.calendar.setOption('headerToolbar', newToolbarOptions);
+                    if (this.calendar) {
+                        this.calendar.setOption('headerToolbar', newToolbarOptions);
                     }
                     this.updateTitleBasedOnRange();
                 },
                 handleDateClick(info) {
                     const clickedDateTime = info.date;
-                    const dayOfWeek = clickedDateTime.getDay() + 1;
-                    const clickedMinutes = clickedDateTime.getHours() * 60 + clickedDateTime.getMinutes();
-
-                    const isClickable = this.availableSlotsConfig.some(slot => {
-                        if (parseInt(slot.day) !== dayOfWeek) return false;
-                        const startMinutes = parseInt(slot.start.split(':')[0]) * 60 + parseInt(slot.start.split(':')[1]);
-                        const endMinutes = parseInt(slot.end.split(':')[0]) * 60 + parseInt(slot.end.split(':')[1]);
-                        return clickedMinutes >= startMinutes && clickedMinutes < endMinutes;
-                    });
-
-                    if (this.currentView === 'timeGridWeek' && !isClickable) {
-                        this.showNotification('info', '非服務時段', '請在亮綠色的可預約時段內點擊喔！');
+                    const dateStr = this.formatDate(clickedDateTime);
+                    
+                    const specialRule = this.specialDatesConfig.find(rule => this.formatDate(rule.date.toDate()) === dateStr);
+                    if (specialRule && specialRule.type === '休假') {
+                        this.showNotification('info', '本日公休', '請選擇其他日期。');
                         return;
                     }
+
+                    if (this.currentView === 'timeGridWeek') {
+                        let isClickable = false;
+                        if (specialRule && specialRule.type === '特殊時段') {
+                             isClickable = this.isTimeInSlot(clickedDateTime, specialRule);
+                        } else {
+                            const dayOfWeek = clickedDateTime.getDay() + 1;
+                            const regularSlots = this.availableSlotsConfig.filter(s => parseInt(s.day) === dayOfWeek);
+                            isClickable = regularSlots.some(slot => this.isTimeInSlot(clickedDateTime, slot));
+                        }
+                        if (!isClickable) {
+                            this.showNotification('info', '非服務時段', '請在可預約時段內點擊喔！');
+                            return;
+                        }
+                    }
                     
-                    const dateStr = `${clickedDateTime.getFullYear()}-${String(clickedDateTime.getMonth() + 1).padStart(2, '0')}-${String(clickedDateTime.getDate()).padStart(2, '0')}`;
                     const timeStr = clickedDateTime.toTimeString().substring(0, 5);
                     const fullDateTimeStr = `${dateStr}T${timeStr}`;
 
@@ -437,10 +476,22 @@
                         this.selectedDate = dateStr;
                         this.booking.date = dateStr;
                         this.booking.time = timeStr;
-                        this.$nextTick(() => {
-                            document.querySelector('.booking-form')?.scrollIntoView({ behavior: 'smooth' });
-                        });
+                        this.$nextTick(() => { document.querySelector('.booking-form')?.scrollIntoView({ behavior: 'smooth' }); });
                     }
+                },
+                isTimeInSlot(dateTime, slot) {
+                    const minutes = dateTime.getHours() * 60 + dateTime.getMinutes();
+                    const startMinutes = parseInt(slot.start.split(':')[0]) * 60 + parseInt(slot.start.split(':')[1]);
+                    const endMinutes = parseInt(slot.end.split(':')[0]) * 60 + parseInt(slot.end.split(':')[1]);
+                    return minutes >= startMinutes && minutes < endMinutes;
+                },
+                formatDate(dateObj) {
+                    return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+                },
+                formatBookingToString(booking) {
+                    const date = booking.bookingDate.toDate();
+                    const timeStr = booking.bookingTime;
+                    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}T${timeStr}`;
                 },
                 selectTime(time) {
                     this.booking.time = time;
